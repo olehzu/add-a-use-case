@@ -67,6 +67,8 @@ public class EvaluationService {
             throw new PeerEvaluationIllegalArgumentException("The evaluator and evaluatee must be on the same team.");
         }
 
+        requireActiveEvaluatee(newPeerEvaluation.getEvaluatee());
+
         // Make sure this is not a duplicate evaluation
         if (this.evaluationRepository.findByWeekAndEvaluatorIdAndEvaluateeId(newPeerEvaluation.getWeek(), newPeerEvaluation.getEvaluator().getId(), newPeerEvaluation.getEvaluatee().getId()).isPresent()) {
             throw new PeerEvaluationIllegalArgumentException("You have already submitted an evaluation for " + newPeerEvaluation.getEvaluatee().getFirstName() + " in this week.");
@@ -81,6 +83,8 @@ public class EvaluationService {
                     // The week is read off the stored evaluation rather than off the update, because the caller
                     // writes the payload and could otherwise name an open week to reopen a closed evaluation.
                     requireOpenSubmissionWindow(oldEvaluation.getEvaluator().getSection(), oldEvaluation.getWeek(), WINDOW_CLOSED_MESSAGE);
+                    // The evaluatee is read off the stored evaluation too, for the same reason as the week
+                    requireActiveEvaluatee(oldEvaluation.getEvaluatee());
                     rescore(oldEvaluation, update.getRatings());
                     oldEvaluation.setPublicComment(update.getPublicComment());
                     oldEvaluation.setPrivateComment(update.getPrivateComment());
@@ -114,6 +118,17 @@ public class EvaluationService {
 
         if (!previousWeek().equals(week)) {
             throw new PeerEvaluationIllegalArgumentException(outOfWindowMessage);
+        }
+    }
+
+    /**
+     * Refuses a submission, or an edit, of a peer evaluation of a deactivated student (BR-evaluatee-active). It is
+     * refused as a rule condition on the submission, like BR-team-assignment-required, not as a permission refusal:
+     * the evaluator may write evaluations, just not of her.
+     */
+    private void requireActiveEvaluatee(Student evaluatee) {
+        if (!evaluatee.isEnabled()) {
+            throw new PeerEvaluationIllegalArgumentException(evaluatee.getFirstName() + " has been deactivated and can no longer be evaluated.");
         }
     }
 
@@ -226,6 +241,12 @@ public class EvaluationService {
         // For each student, compute her average total score, collect all public comments and private comments, and compute rating averages for each criterion.
         students.forEach(student -> {
             PeerEvaluationAverage peerEvaluationAverage = getPeerEvaluationAverage(week, student);
+            // BR-evaluatee-active: a deactivated student is listed for a week only if she received at least one peer
+            // evaluation that week. Evaluations she wrote do not count. Asked of the evaluations themselves, not
+            // inferred from how the average is built, so a change to the average cannot hide her.
+            if (!student.isEnabled() && this.evaluationRepository.findByWeekAndEvaluateeId(week, student.getId()).isEmpty()) {
+                return;
+            }
             report.getPeerEvaluationAverages().add(peerEvaluationAverage);
         });
 

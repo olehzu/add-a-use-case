@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -671,6 +672,118 @@ class EvaluationServiceTest {
         assertThat(peerEvaluations.get(2).getEvaluator().getId()).isEqualTo(5);
         assertThat(peerEvaluations.get(2).getWeek()).isEqualTo("2023-W31");
         assertThat(peerEvaluations.get(2).getTotalScore()).isCloseTo(49.0, within(0.01));
+    }
+
+
+    // BR-evaluatee-active
+
+    private void givenTheClockIs(LocalDate date) {
+        Clock fixedClock = Clock.fixed(date.atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
+        given(this.clock.instant()).willReturn(fixedClock.instant());
+        given(this.clock.getZone()).willReturn(fixedClock.getZone());
+    }
+
+    @Test
+    void testAddPeerEvaluationOfADeactivatedTeammateIsRefused() {
+        // Given: 2023-W31 is open (Aug 13, 2023 is in 2023-W32), and Woody, Amanda's teammate, is deactivated
+        givenTheClockIs(LocalDate.of(2023, 8, 13));
+        this.woody.setEnabled(false);
+        PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", this.amanda, this.woody, List.of(), "public comment", "private comment");
+
+        // When
+        Throwable throwable = catchThrowable(() -> this.evaluationService.addPeerEvaluation(newPeerEvaluation));
+
+        // Then
+        assertThat(throwable)
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessage("Woody has been deactivated and can no longer be evaluated.");
+        verify(this.evaluationRepository, times(0)).save(any(PeerEvaluation.class));
+    }
+
+    @Test
+    void testAddPeerEvaluationReportsAClosedWindowBeforeADeactivatedTeammate() {
+        // Given: 2023-W31 is no longer the previous week, and Woody is deactivated
+        givenTheClockIs(LocalDate.of(2023, 9, 15));
+        this.woody.setEnabled(false);
+        PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", this.amanda, this.woody, List.of(), "public comment", "private comment");
+
+        // When
+        Throwable throwable = catchThrowable(() -> this.evaluationService.addPeerEvaluation(newPeerEvaluation));
+
+        // Then
+        assertThat(throwable)
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessage("You can only submit evaluations for the previous week.");
+    }
+
+    @Test
+    void testUpdatePeerEvaluationOfANowDeactivatedTeammateIsRefused() {
+        // Given: the window for 2023-W31 is open (Aug 8, 2023 is in 2023-W32), and Eric has since been deactivated
+        givenTheClockIs(LocalDate.of(2023, 8, 8));
+        PeerEvaluation oldPeerEvaluation = new PeerEvaluation("2023-W31", this.john, this.eric, List.of(), "public comment", "private comment");
+        oldPeerEvaluation.setPeerEvaluationId(1);
+        PeerEvaluation update = new PeerEvaluation("2023-W31", this.john, this.eric, List.of(), "new public comment", "new private comment");
+        this.eric.setEnabled(false);
+        given(this.evaluationRepository.findById(1)).willReturn(Optional.of(oldPeerEvaluation));
+
+        // When
+        Throwable throwable = catchThrowable(() -> this.evaluationService.updatePeerEvaluation(1, update));
+
+        // Then
+        assertThat(throwable)
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessage("Eric has been deactivated and can no longer be evaluated.");
+        assertThat(oldPeerEvaluation.getPublicComment()).isEqualTo("public comment");
+        verify(this.evaluationRepository, times(0)).save(any(PeerEvaluation.class));
+    }
+
+    @Test
+    void testUpdatePeerEvaluationReportsAClosedWindowBeforeADeactivatedTeammate() {
+        // Given: the window for 2023-W31 has closed, and Eric has been deactivated
+        givenTheClockIs(LocalDate.of(2023, 9, 15));
+        PeerEvaluation oldPeerEvaluation = new PeerEvaluation("2023-W31", this.john, this.eric, List.of(), "public comment", "private comment");
+        PeerEvaluation update = new PeerEvaluation("2023-W31", this.john, this.eric, List.of(), "new public comment", "new private comment");
+        this.eric.setEnabled(false);
+        given(this.evaluationRepository.findById(1)).willReturn(Optional.of(oldPeerEvaluation));
+
+        // When
+        Throwable throwable = catchThrowable(() -> this.evaluationService.updatePeerEvaluation(1, update));
+
+        // Then
+        assertThat(throwable)
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessage("The submission window for this peer evaluation has closed, so it can no longer be changed.");
+    }
+
+    @Test
+    void testSectionReportListsADeactivatedStudentOnlyForAWeekSheReceivedAnEvaluation() {
+        // Given, for 2023-W31:
+        //   Eric is deactivated and received evaluations          -> listed
+        //   Woody is deactivated and received none                 -> not listed
+        //   Amanda is deactivated, wrote one but received none     -> not listed
+        //   Jerry is active and received none                      -> still listed
+        Student jerry = this.students.get(2);
+        this.eric.setEnabled(false);
+        this.woody.setEnabled(false);
+        this.amanda.setEnabled(false);
+        given(this.sectionRepository.findById(2)).willReturn(Optional.of(new Section("2023-2024", LocalDate.of(2023, 8, 14), LocalDate.of(2024, 4, 29), true, DayOfWeek.MONDAY, LocalTime.of(23, 59), DayOfWeek.TUESDAY, LocalTime.of(23, 59))));
+        given(this.studentRepository.findBySectionSectionId(2)).willReturn(List.of(this.eric, this.woody, this.amanda, jerry));
+        given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", this.eric.getId())).willReturn(this.ericsW31Evaluations);
+        given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", this.woody.getId())).willReturn(List.of());
+        given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", this.amanda.getId())).willReturn(List.of());
+        // Amanda's own evaluation of Woody is really there, so a report that counted evaluations she wrote would list
+        // her and fail this test. Lenient, because a correct report never asks for the evaluations she wrote.
+        PeerEvaluation amandaEvaluatesWoody = new PeerEvaluation("2023-W31", this.amanda, this.woody, List.of(), "public comment", "private comment");
+        lenient().when(this.evaluationRepository.findByWeekAndEvaluatorId("2023-W31", this.amanda.getId())).thenReturn(List.of(amandaEvaluatesWoody));
+        given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", jerry.getId())).willReturn(List.of());
+
+        // When
+        WeeklyPeerEvaluationReport report = this.evaluationService.generateWeeklyPeerEvaluationReportForSection(2, "2023-W31");
+
+        // Then
+        assertThat(report.getPeerEvaluationAverages())
+                .extracting(PeerEvaluationAverage::getStudentId)
+                .containsExactly(this.eric.getId(), jerry.getId());
     }
 
 }

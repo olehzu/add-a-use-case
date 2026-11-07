@@ -87,6 +87,7 @@ classDiagram
   - The new route rule goes next to the other `/students/{studentId}` rules, before `denyAll()`. No broader `/students/**` matcher precedes them.
   - The existing `GET /students/{studentId}` rule widens from `userOwnershipAuthorizationManager` to `anyOf(userOwnershipAuthorizationManager, studentCourseOwnershipAuthorizationManager)` (see *Course admin reach*).
   - The converter is set **explicitly**: `.jwt(jwt -> jwt.jwtAuthenticationConverter(activeAccountConverter))`. Today `.jwt(Customizer.withDefaults())` picks up the `JwtAuthenticationConverter` bean implicitly, and it would not pick up a converter of another type.
+  - The converter is injected as a parameter of `securityFilterChain(...)`, not through the constructor: it depends on the `JwtAuthenticationConverter` bean that `SecurityConfiguration` itself defines, so constructor injection would be a circular dependency.
 - [`evaluation/EvaluationService`](../../backend/src/main/java/team/projectpulse/evaluation/EvaluationService.java): three changes; see *Evaluations of a deactivated student*.
 
 **Frontend**

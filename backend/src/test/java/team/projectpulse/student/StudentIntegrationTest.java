@@ -1,7 +1,10 @@
 package team.projectpulse.student;
 
+import jakarta.persistence.EntityManager;
 import tools.jackson.databind.json.JsonMapper;
 import team.projectpulse.AbstractIntegrationTest;
+import team.projectpulse.instructor.Instructor;
+import team.projectpulse.section.Section;
 import team.projectpulse.system.StatusCode;
 import org.hamcrest.Matchers;
 import org.json.JSONObject;
@@ -26,6 +29,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Integration tests for Student API endpoints")
 class StudentIntegrationTest extends AbstractIntegrationTest {
@@ -35,6 +40,9 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     JsonMapper jsonMapper;
+
+    @Autowired
+    EntityManager entityManager;
 
     String adminToken;
 
@@ -305,6 +313,79 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN))
                 .andExpect(jsonPath("$.message").value("No permission."))
                 .andExpect(jsonPath("$.data").value("Access Denied"));
+    }
+
+
+    // PUT no longer deactivates (UC-STU-deactivate-student, design/stu.md)
+
+    private String studentJson(String firstName, boolean enabled) throws Exception {
+        Map<String, Object> studentDto = new HashMap<>();
+        studentDto.put("username", "j.smith@abc.edu");
+        studentDto.put("firstName", firstName);
+        studentDto.put("lastName", "Smith");
+        studentDto.put("email", "j.smith@abc.edu");
+        studentDto.put("enabled", enabled);
+        return this.jsonMapper.writeValueAsString(studentDto);
+    }
+
+    @Test
+    void testInstructorCannotDeactivateAStudentThroughUpdate() throws Exception {
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(studentJson("John (updated)", false)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.INVALID_ARGUMENT))
+                .andExpect(jsonPath("$.message").value("Use the deactivate action to deactivate a student."));
+
+        this.entityManager.flush();
+        this.entityManager.clear();
+        Student john = this.entityManager.find(Student.class, 4);
+        assertThat(john.isEnabled()).isTrue();
+        assertThat(john.getFirstName()).isEqualTo("John");
+    }
+
+    @Test
+    void testStudentJohnUpdatesOwnProfileSendingHisCurrentStatus() throws Exception {
+        // UserInfo.vue sends enabled: true when she saves her profile
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(studentJson("John (updated)", true)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.firstName").value("John (updated)"))
+                .andExpect(jsonPath("$.data.enabled").value(true));
+    }
+
+    @Test
+    void testInstructorStillReactivatesAStudentThroughUpdate() throws Exception {
+        // Regression guard for UC-STU-reactivate-student, not this use case
+        this.entityManager.find(Student.class, 4).setEnabled(false);
+        this.entityManager.flush();
+
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(studentJson("John", true)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.enabled").value(true));
+    }
+
+
+    // UC-STU-deactivate-student step 2: the course admin of her course may view her
+
+    private void unassignBingyangFromSection2() {
+        Section section = this.entityManager.find(Section.class, 2);
+        Instructor bingyang = this.entityManager.createQuery("select i from Instructor i where i.email = 'b.wei@abc.edu'", Instructor.class).getSingleResult();
+        section.removeInstructor(bingyang);
+        this.entityManager.flush();
+    }
+
+    @Test
+    void testUnassignedCourseAdminFindsStudentOfHerCourseById() throws Exception {
+        // Given: Bingyang owns course 1 but is no longer assigned to course section 2, John's
+        unassignBingyangFromSection2();
+
+        // When and then (a course admin of another course, Tim, is still refused: testAdminTimFindStudentInfoById)
+        this.mockMvc.perform(get(this.baseUrl + "/students/4").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
+                .andExpect(jsonPath("$.data.id").value(4));
     }
 
 }

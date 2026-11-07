@@ -28,13 +28,22 @@
       height="600"
       v-loading="loading"
       scrollbar-always-on
+      :row-class-name="rowClassName"
     >
-      <el-table-column
-        label="Student Name"
-        prop="evaluateeName"
-        min-width="100"
-        fixed
-      ></el-table-column>
+      <el-table-column label="Student Name" prop="evaluateeName" min-width="100" fixed>
+        <template #default="{ row }">
+          <span>{{ row.evaluateeName }}</span>
+          <!-- BR-evaluatee-active: a saved evaluation of a deactivated teammate is shown, but read-only -->
+          <el-tag
+            v-if="isDeactivated(row.evaluateeId)"
+            type="info"
+            size="small"
+            style="margin-left: 6px"
+            data-cy="evaluatee-deactivated"
+            >Deactivated</el-tag
+          >
+        </template>
+      </el-table-column>
       <el-table-column v-for="criterion in criteria" :key="criterion.criterionId" min-width="150">
         <template #header>
           <el-tooltip effect="dark" :content="criterion.criterion" placement="top">
@@ -50,6 +59,7 @@
               :min="0"
               :max="criterion.maxScore"
               :step="1"
+              :disabled="isDeactivated(row.evaluateeId)"
               controls-position="right"
               style="width: 80px"
             />
@@ -72,6 +82,7 @@
             type="textarea"
             :rows="5"
             placeholder="Enter public comment"
+            :disabled="isDeactivated(row.evaluateeId)"
             max-length="255"
             show-word-limit
           />
@@ -93,6 +104,7 @@
             type="textarea"
             :rows="5"
             placeholder="Enter private comment"
+            :disabled="isDeactivated(row.evaluateeId)"
             max-length="255"
             show-word-limit
           />
@@ -119,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { findStudentsByTeamId } from '@/apis/student'
 import type { Student, FindStudentByTeamIdResponse } from '@/apis/student/types'
 import { findSectionById } from '@/apis/section'
@@ -158,6 +170,23 @@ const students = ref<Student[]>([]) // Students on the same team
 const sectionId = ref<number>() // Section ID of the team
 const criteria = ref<Criterion[]>([]) // Criteria used for peer evaluations
 const isLoading = ref(false)
+
+// Teammates who have been deactivated (BR-evaluatee-active): not offered on a first submission, and an evaluation
+// already saved of one is read-only and never sent again
+const deactivatedStudentIds = computed(
+  () =>
+    new Set(
+      students.value.filter((student) => student.enabled === false).map((student) => student.id)
+    )
+)
+
+function isDeactivated(evaluateeId: number): boolean {
+  return deactivatedStudentIds.value.has(evaluateeId)
+}
+
+function rowClassName({ row }: { row: PeerEvaluation }): string {
+  return isDeactivated(row.evaluateeId) ? 'deactivated-evaluatee' : ''
+}
 
 const userInfoStore = useUserInfoStore() // Need team ID to search for students
 
@@ -209,19 +238,21 @@ async function prepareStartingPeerEvaluations() {
   } else {
     // If not, create a new set of evaluations
     isNewSubmission = true
-    peerEvalutions.value = students.value.map((student) => ({
-      week: previousWeek.value,
-      evaluatorId: (userInfoStore.userInfo as Student).id as number,
-      evaluateeId: student.id as number,
-      evaluateeName: `${student.firstName} ${student.lastName}`,
-      ratings: criteria.value.map((criterion) => ({
-        criterionId: criterion.criterionId as number,
-        criterion: criterion.criterion,
-        actualScore: 10 // Default score, can be changed by the user
-      })),
-      publicComment: '',
-      privateComment: ''
-    }))
+    peerEvalutions.value = students.value
+      .filter((student) => !isDeactivated(student.id as number))
+      .map((student) => ({
+        week: previousWeek.value,
+        evaluatorId: (userInfoStore.userInfo as Student).id as number,
+        evaluateeId: student.id as number,
+        evaluateeName: `${student.firstName} ${student.lastName}`,
+        ratings: criteria.value.map((criterion) => ({
+          criterionId: criterion.criterionId as number,
+          criterion: criterion.criterion,
+          actualScore: 10 // Default score, can be changed by the user
+        })),
+        publicComment: '',
+        privateComment: ''
+      }))
   }
 }
 
@@ -247,7 +278,13 @@ async function submitPeerEvaluations() {
 // Update peer evaluations
 async function updatePeerEvaluations() {
   if (peerEvalutions.value) {
-    const submitPromises = peerEvalutions.value.map(async (evaluation) => {
+    // Only evaluations of active teammates are sent: the server refuses one of a deactivated teammate, and that one
+    // refusal would reject Promise.all and report a failure although the others were saved
+    const evaluations = peerEvalutions.value
+    const submitPromises = evaluations.map(async (evaluation) => {
+      if (isDeactivated(evaluation.evaluateeId)) {
+        return evaluation
+      }
       const result: UpdatePeerEvaluationResponse = await updateEvaluation(evaluation)
       return result.data
     })
@@ -261,6 +298,10 @@ async function updatePeerEvaluations() {
 </script>
 
 <style lang="scss" scoped>
+:deep(.deactivated-evaluatee) {
+  color: var(--el-text-color-disabled);
+}
+
 .page-container {
   min-height: 100%;
   box-sizing: border-box;

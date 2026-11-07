@@ -12,8 +12,9 @@ import team.projectpulse.student.StudentSecurityService;
 import java.util.function.Supplier;
 
 /**
- * Guards reading one student's detailed peer evaluation results, private comments included, admitting only an instructor
- * of that student's course section.
+ * Admits only an instructor of one named student's course section. It guards reading her detailed peer evaluation
+ * results, private comments included, and, composed with {@link StudentCourseOwnershipAuthorizationManager},
+ * deactivating her (UC-STU-deactivate-student).
  *
  * <p>Reads {@code studentId} and delegates to {@link StudentSecurityService#isCurrentUserInstructorOfStudentSection}.
  */
