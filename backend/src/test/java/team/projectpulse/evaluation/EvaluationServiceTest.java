@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -769,7 +770,11 @@ class EvaluationServiceTest {
         given(this.studentRepository.findBySectionSectionId(2)).willReturn(List.of(this.eric, this.woody, this.amanda, jerry));
         given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", this.eric.getId())).willReturn(this.ericsW31Evaluations);
         given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", this.woody.getId())).willReturn(List.of());
-        given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", this.amanda.getId())).willReturn(List.of()); // Her own evaluation of Woody is not one she received
+        given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", this.amanda.getId())).willReturn(List.of());
+        // Amanda's own evaluation of Woody is really there, so a report that counted evaluations she wrote would list
+        // her and fail this test. Lenient, because a correct report never asks for the evaluations she wrote.
+        PeerEvaluation amandaEvaluatesWoody = new PeerEvaluation("2023-W31", this.amanda, this.woody, List.of(), "public comment", "private comment");
+        lenient().when(this.evaluationRepository.findByWeekAndEvaluatorId("2023-W31", this.amanda.getId())).thenReturn(List.of(amandaEvaluatesWoody));
         given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", jerry.getId())).willReturn(List.of());
 
         // When
