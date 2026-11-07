@@ -210,6 +210,8 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, this.baseUrl + "/students/{studentId}").access(AuthorizationManagers.anyOf(this.userOwnershipAuthorizationManager, this.studentCourseOwnershipAuthorizationManager))
                         .requestMatchers(HttpMethod.PUT, this.baseUrl + "/students/{studentId}").access(this.userOwnershipAuthorizationManager)
                         .requestMatchers(HttpMethod.DELETE, this.baseUrl + "/students/{studentId}").access(this.userOwnershipAuthorizationManager)
+                        // UC-STU-deactivate-student: an instructor of her course section or the course admin of her course (BR-student-lifecycle)
+                        .requestMatchers(HttpMethod.PATCH, this.baseUrl + "/students/{studentId}/deactivation").access(AuthorizationManagers.anyOf(this.studentInstructorAuthorizationManager, this.studentCourseOwnershipAuthorizationManager))
                         .requestMatchers(HttpMethod.GET, this.baseUrl + "/students/teams/{teamId}").access(this.teamMembershipAuthorizationManager)
 
                         // Security rules for the /activities/** endpoint.
