@@ -2227,12 +2227,12 @@ Report generating algorithm: N/A
 
 **Main Success Scenario:**
 1. The student indicates to submit a peer evaluation for the previous week.
-2. The system asks the student to provide peer evaluations for every team member.
+2. The system asks the student to provide peer evaluations for every team member whose account is active (BR-evaluatee-active).
 3. See the "Details" defined in the Associated Information of this use case.
-4. The student evaluates each team member (self included) and confirms that she has finished.
+4. The student evaluates each of those team members (self included) and confirms that she has finished.
 5. The system validates the student's inputs according to the "Details" defined in the Associated Information of this use case.
 6. The system displays the details of the peer evaluation and asks the student to confirm the evaluation and submission.
-7. The system notes that a submitted peer evaluation remains editable while its submission window is open; the student may re-submit it to update it until the window closes (BR-evaluation-editable-until-close, BR-evaluation-submission-window).
+7. The system notes that a submitted peer evaluation remains editable, and that the student may re-submit it to update it, for as long as BR-evaluation-editable-until-close allows (see also BR-evaluation-submission-window).
 8. The student either confirms the evaluation and submission (continues the normal flow) or chooses to modify the details (return to step 3).
 9. The system saves the peer evaluation and informs the student that this peer evaluation has been submitted.
 10. Use case ends.
