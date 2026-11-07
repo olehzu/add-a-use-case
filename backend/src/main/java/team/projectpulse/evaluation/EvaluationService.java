@@ -242,9 +242,9 @@ public class EvaluationService {
         students.forEach(student -> {
             PeerEvaluationAverage peerEvaluationAverage = getPeerEvaluationAverage(week, student);
             // BR-evaluatee-active: a deactivated student is listed for a week only if she received at least one peer
-            // evaluation that week. Evaluations she wrote do not count. The average is built from exactly the
-            // evaluations she received, one public comment entry each, so an empty list means she received none.
-            if (!student.isEnabled() && peerEvaluationAverage.getPublicComments().isEmpty()) {
+            // evaluation that week. Evaluations she wrote do not count. Asked of the evaluations themselves, not
+            // inferred from how the average is built, so a change to the average cannot hide her.
+            if (!student.isEnabled() && this.evaluationRepository.findByWeekAndEvaluateeId(week, student.getId()).isEmpty()) {
                 return;
             }
             report.getPeerEvaluationAverages().add(peerEvaluationAverage);
