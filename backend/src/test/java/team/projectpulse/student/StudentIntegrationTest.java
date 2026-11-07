@@ -3,6 +3,8 @@ package team.projectpulse.student;
 import jakarta.persistence.EntityManager;
 import tools.jackson.databind.json.JsonMapper;
 import team.projectpulse.AbstractIntegrationTest;
+import team.projectpulse.instructor.Instructor;
+import team.projectpulse.section.Section;
 import team.projectpulse.system.StatusCode;
 import org.hamcrest.Matchers;
 import org.json.JSONObject;
@@ -361,6 +363,29 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.flag").value(true))
                 .andExpect(jsonPath("$.data.enabled").value(true));
+    }
+
+
+    // UC-STU-deactivate-student step 2: the course admin of her course may view her
+
+    private void unassignBingyangFromSection2() {
+        Section section = this.entityManager.find(Section.class, 2);
+        Instructor bingyang = this.entityManager.createQuery("select i from Instructor i where i.email = 'b.wei@abc.edu'", Instructor.class).getSingleResult();
+        section.removeInstructor(bingyang);
+        this.entityManager.flush();
+    }
+
+    @Test
+    void testUnassignedCourseAdminFindsStudentOfHerCourseById() throws Exception {
+        // Given: Bingyang owns course 1 but is no longer assigned to course section 2, John's
+        unassignBingyangFromSection2();
+
+        // When and then (a course admin of another course, Tim, is still refused: testAdminTimFindStudentInfoById)
+        this.mockMvc.perform(get(this.baseUrl + "/students/4").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
+                .andExpect(jsonPath("$.data.id").value(4));
     }
 
 }
