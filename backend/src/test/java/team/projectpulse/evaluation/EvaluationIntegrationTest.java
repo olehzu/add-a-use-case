@@ -6,6 +6,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import team.projectpulse.AbstractIntegrationTest;
 import team.projectpulse.evaluation.dto.PeerEvaluationDto;
 import team.projectpulse.evaluation.dto.RatingDto;
+import team.projectpulse.student.Student;
 import team.projectpulse.system.StatusCode;
 import org.hamcrest.Matchers;
 import org.json.JSONObject;
@@ -33,6 +34,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @DisplayName("Integration tests for Evaluation API endpoints")
 public class EvaluationIntegrationTest extends AbstractIntegrationTest {
@@ -787,6 +789,79 @@ public class EvaluationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.flag").value(false))
                 .andExpect(jsonPath("$.code").value(StatusCode.INVALID_ARGUMENT))
                 .andExpect(jsonPath("$.message").value("The ratings are not valid. Please make sure all criteria in the rubric are rated and each criterion is rated only once."));
+    }
+
+
+    // BR-evaluatee-active
+
+    private void givenTheClockIs(LocalDate date) {
+        Clock fixedClock = Clock.fixed(date.atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
+        given(this.clock.instant()).willReturn(fixedClock.instant());
+        given(this.clock.getZone()).willReturn(fixedClock.getZone());
+    }
+
+    private void deactivateEric() {
+        this.entityManager.find(Student.class, 5).setEnabled(false);
+        this.entityManager.flush();
+    }
+
+    private List<RatingDto> sixRatings() {
+        return List.of(
+                new RatingDto(null, 1, 4.0),
+                new RatingDto(null, 2, 9.0),
+                new RatingDto(null, 3, 7.0),
+                new RatingDto(null, 4, 10.0),
+                new RatingDto(null, 5, 5.0),
+                new RatingDto(null, 6, 6.0)
+        );
+    }
+
+    @Test
+    @DisplayName("BR-evaluatee-active: a peer evaluation of a deactivated teammate is refused; one of an active teammate is not")
+    void testStudentJohnCannotEvaluateADeactivatedTeammate() throws Exception {
+        givenTheClockIs(LocalDate.of(2023, 9, 15)); // 2023-W37, so 2023-W36 is open
+        deactivateEric();
+        long before = this.evaluationRepository.count();
+
+        PeerEvaluationDto ofEric = new PeerEvaluationDto(null, "2023-W36", 4, "John Smith", 5, "Eric Hudson", sixRatings(), 41.0, "Good job", "Keep it up", null, null);
+        this.mockMvc.perform(post(this.baseUrl + "/evaluations").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(ofEric)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.INVALID_ARGUMENT))
+                .andExpect(jsonPath("$.message").value("Eric has been deactivated and can no longer be evaluated."));
+        assertThat(this.evaluationRepository.count()).isEqualTo(before);
+
+        // A separate submission by the same evaluator, same week, of an active teammate still succeeds
+        PeerEvaluationDto ofJerry = new PeerEvaluationDto(null, "2023-W36", 4, "John Smith", 6, "Jerry Moon", sixRatings(), 41.0, "Good job", "Keep it up", null, null);
+        this.mockMvc.perform(post(this.baseUrl + "/evaluations").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(ofJerry)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.evaluateeId").value(6));
+    }
+
+    @Test
+    @DisplayName("BR-evaluatee-active: an evaluation of a now-deactivated teammate can no longer be edited; one of an active teammate can")
+    void testStudentJohnCannotEditHisEvaluationOfANowDeactivatedTeammate() throws Exception {
+        givenTheClockIs(LocalDate.of(2023, 8, 8)); // 2023-W32, so 2023-W31 (evaluations 1 and 2) is open
+        deactivateEric();
+
+        // Evaluation 1 is John's of Eric
+        PeerEvaluationDto ofEric = new PeerEvaluationDto(1, "2023-W31", 4, "John Smith", 5, "Eric Hudson", sixRatings(), 41.0, "Changed", "Changed", null, null);
+        this.mockMvc.perform(put(this.baseUrl + "/evaluations/1").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(ofEric)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.INVALID_ARGUMENT))
+                .andExpect(jsonPath("$.message").value("Eric has been deactivated and can no longer be evaluated."));
+        this.entityManager.flush();
+        this.entityManager.clear();
+        assertThat(this.evaluationRepository.findById(1).orElseThrow().getPublicComment()).isNotEqualTo("Changed");
+
+        // Evaluation 2 is John's of Jerry, who is active
+        PeerEvaluationDto ofJerry = new PeerEvaluationDto(2, "2023-W31", 4, "John Smith", 6, "Jerry Moon", sixRatings(), 41.0, "Changed", "Changed", null, null);
+        this.mockMvc.perform(put(this.baseUrl + "/evaluations/2").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(ofJerry)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.publicComment").value("Changed"));
     }
 
 }
