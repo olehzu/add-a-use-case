@@ -845,7 +845,11 @@ public class EvaluationIntegrationTest extends AbstractIntegrationTest {
         givenTheClockIs(LocalDate.of(2023, 8, 8)); // 2023-W32, so 2023-W31 (evaluations 1 and 2) is open
         deactivateEric();
 
-        // Evaluation 1 is John's of Eric
+        // Evaluation 1 is John's of Eric. Its stored values, read before the PUT, are the oracle for "unchanged".
+        PeerEvaluation stored = this.evaluationRepository.findById(1).orElseThrow();
+        String publicCommentBefore = stored.getPublicComment();
+        String privateCommentBefore = stored.getPrivateComment();
+        Double totalScoreBefore = stored.getTotalScore();
         PeerEvaluationDto ofEric = new PeerEvaluationDto(1, "2023-W31", 4, "John Smith", 5, "Eric Hudson", sixRatings(), 41.0, "Changed", "Changed", null, null);
         this.mockMvc.perform(put(this.baseUrl + "/evaluations/1").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(ofEric)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
                 .andExpect(status().isBadRequest())
@@ -854,7 +858,10 @@ public class EvaluationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.message").value("Eric has been deactivated and can no longer be evaluated."));
         this.entityManager.flush();
         this.entityManager.clear();
-        assertThat(this.evaluationRepository.findById(1).orElseThrow().getPublicComment()).isNotEqualTo("Changed");
+        PeerEvaluation afterRefusal = this.evaluationRepository.findById(1).orElseThrow();
+        assertThat(afterRefusal.getPublicComment()).isEqualTo(publicCommentBefore);
+        assertThat(afterRefusal.getPrivateComment()).isEqualTo(privateCommentBefore);
+        assertThat(afterRefusal.getTotalScore()).isEqualTo(totalScoreBefore);
 
         // Evaluation 2 is John's of Jerry, who is active
         PeerEvaluationDto ofJerry = new PeerEvaluationDto(2, "2023-W31", 4, "John Smith", 6, "Jerry Moon", sixRatings(), 41.0, "Changed", "Changed", null, null);
