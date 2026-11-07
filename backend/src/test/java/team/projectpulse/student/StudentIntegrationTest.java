@@ -1,5 +1,6 @@
 package team.projectpulse.student;
 
+import jakarta.persistence.EntityManager;
 import tools.jackson.databind.json.JsonMapper;
 import team.projectpulse.AbstractIntegrationTest;
 import team.projectpulse.system.StatusCode;
@@ -26,6 +27,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Integration tests for Student API endpoints")
 class StudentIntegrationTest extends AbstractIntegrationTest {
@@ -35,6 +38,9 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     JsonMapper jsonMapper;
+
+    @Autowired
+    EntityManager entityManager;
 
     String adminToken;
 
@@ -305,6 +311,56 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN))
                 .andExpect(jsonPath("$.message").value("No permission."))
                 .andExpect(jsonPath("$.data").value("Access Denied"));
+    }
+
+
+    // PUT no longer deactivates (UC-STU-deactivate-student, design/stu.md)
+
+    private String studentJson(String firstName, boolean enabled) throws Exception {
+        Map<String, Object> studentDto = new HashMap<>();
+        studentDto.put("username", "j.smith@abc.edu");
+        studentDto.put("firstName", firstName);
+        studentDto.put("lastName", "Smith");
+        studentDto.put("email", "j.smith@abc.edu");
+        studentDto.put("enabled", enabled);
+        return this.jsonMapper.writeValueAsString(studentDto);
+    }
+
+    @Test
+    void testInstructorCannotDeactivateAStudentThroughUpdate() throws Exception {
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(studentJson("John (updated)", false)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.INVALID_ARGUMENT))
+                .andExpect(jsonPath("$.message").value("Use the deactivate action to deactivate a student."));
+
+        this.entityManager.flush();
+        this.entityManager.clear();
+        Student john = this.entityManager.find(Student.class, 4);
+        assertThat(john.isEnabled()).isTrue();
+        assertThat(john.getFirstName()).isEqualTo("John");
+    }
+
+    @Test
+    void testStudentJohnUpdatesOwnProfileSendingHisCurrentStatus() throws Exception {
+        // UserInfo.vue sends enabled: true when she saves her profile
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(studentJson("John (updated)", true)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.firstName").value("John (updated)"))
+                .andExpect(jsonPath("$.data.enabled").value(true));
+    }
+
+    @Test
+    void testInstructorStillReactivatesAStudentThroughUpdate() throws Exception {
+        // Regression guard for UC-STU-reactivate-student, not this use case
+        this.entityManager.find(Student.class, 4).setEnabled(false);
+        this.entityManager.flush();
+
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(studentJson("John", true)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.enabled").value(true));
     }
 
 }

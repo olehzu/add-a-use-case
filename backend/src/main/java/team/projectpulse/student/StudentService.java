@@ -108,16 +108,25 @@ public class StudentService {
         Student oldStudent = this.studentRepository.findById(studentId)
                 .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
 
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean isInstructor = authentication.getAuthorities().stream().anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_instructor"));
+
+        // Deactivation has its own action, with its own authority rule and a warning (UC-STU-deactivate-student), so
+        // this generic update refuses it, before changing anything. Reactivation stays here until
+        // UC-STU-reactivate-student is built. StudentDto.enabled is a primitive, so every caller must send the
+        // student's current value.
+        if (isInstructor && oldStudent.isEnabled() && !update.isEnabled()) {
+            throw new IllegalArgumentException("Use the deactivate action to deactivate a student.");
+        }
+
         // If the user is not an admin, then the user can only update her username, first rubricName, last rubricName, and email
         oldStudent.setUsername(update.getUsername());
         oldStudent.setFirstName(update.getFirstName());
         oldStudent.setLastName(update.getLastName());
         oldStudent.setEmail(update.getEmail());
 
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
         // If the user is an admin, then the user can update all the fields
-        if (authentication.getAuthorities().stream().anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_instructor"))) {
+        if (isInstructor) {
             oldStudent.setEnabled(update.isEnabled());
 //            oldStudent.setRoles(update.getRoles());
         }

@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
@@ -153,7 +154,8 @@ class StudentServiceTest {
     @Test
     void testInstructorUpdatesStudent() {
         // Given
-        Student update = new Student("john", "John (updated)", "Smith (updated)", "j.smith@abc.edu (updated)", "", false, "admin student");
+        // The instructor sends the student's current status, as every caller must (PUT no longer deactivates)
+        Student update = new Student("john", "John (updated)", "Smith (updated)", "j.smith@abc.edu (updated)", "", true, "admin student");
         given(this.studentRepository.findById(1)).willReturn(Optional.of(this.students.get(0)));
         given(this.studentRepository.save(any(Student.class))).willReturn(this.students.get(0));
 
@@ -175,6 +177,49 @@ class StudentServiceTest {
         assertThat(result.getEmail()).isEqualTo(update.getEmail());
 //        assertThat(result.getRoles()).isEqualTo(update.getRoles());
         assertThat(result.isEnabled()).isEqualTo(update.isEnabled());
+    }
+
+    private void givenTheCallerIsAnInstructor() {
+        Instructor instructor = new Instructor();
+        instructor.setRoles("instructor");
+        MyUserPrincipal myUserPrincipal = new MyUserPrincipal(instructor);
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(new UsernamePasswordAuthenticationToken(myUserPrincipal, null, myUserPrincipal.getAuthorities()));
+        SecurityContextHolder.setContext(securityContext);
+    }
+
+    @Test
+    void testInstructorCannotDeactivateAStudentThroughUpdate() {
+        // Given: John is active, and the instructor sends enabled false
+        Student update = new Student("john", "John", "Smith", "j.smith@abc.edu", "", false, "student");
+        given(this.studentRepository.findById(1)).willReturn(Optional.of(this.students.get(0)));
+        givenTheCallerIsAnInstructor();
+
+        // When
+        Throwable thrown = catchThrowable(() -> this.studentService.updateStudent(1, update));
+
+        // Then
+        assertThat(thrown).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Use the deactivate action to deactivate a student.");
+        assertThat(this.students.get(0).isEnabled()).isTrue();
+        verify(this.studentRepository, never()).save(any(Student.class));
+    }
+
+    @Test
+    void testInstructorStillReactivatesAStudentThroughUpdate() {
+        // Given: regression guard for UC-STU-reactivate-student, which still goes through the PUT
+        Student john = this.students.get(0);
+        john.setEnabled(false);
+        Student update = new Student("john", "John", "Smith", "j.smith@abc.edu", "", true, "student");
+        given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
+        given(this.studentRepository.save(john)).willReturn(john);
+        givenTheCallerIsAnInstructor();
+
+        // When
+        Student result = this.studentService.updateStudent(1, update);
+
+        // Then
+        assertThat(result.isEnabled()).isTrue();
     }
 
     @Test
