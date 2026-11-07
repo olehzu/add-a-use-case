@@ -192,15 +192,9 @@ public class ExceptionHandlerAdvice {
         return new Result(false, StatusCode.FORBIDDEN, ex.getMessage());
     }
 
-    @ExceptionHandler(SectionLockRequiredException.class)
+    @ExceptionHandler({SectionLockRequiredException.class, StudentAlreadyDeactivatedException.class})
     @ResponseStatus(HttpStatus.CONFLICT)
-    Result handleSectionLockRequiredException(SectionLockRequiredException ex) {
-        return new Result(false, StatusCode.CONFLICT, ex.getMessage());
-    }
-
-    @ExceptionHandler(StudentAlreadyDeactivatedException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
-    Result handleStudentAlreadyDeactivatedException(StudentAlreadyDeactivatedException ex) {
+    Result handleConflictWithItsOwnMessage(RuntimeException ex) {
         return new Result(false, StatusCode.CONFLICT, ex.getMessage());
     }
 
