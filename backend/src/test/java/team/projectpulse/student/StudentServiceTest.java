@@ -223,6 +223,37 @@ class StudentServiceTest {
     }
 
     @Test
+    void testDeactivateStudent() {
+        // Given
+        Student john = this.students.get(0);
+        given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
+        given(this.studentRepository.save(john)).willReturn(john);
+
+        // When
+        Student result = this.studentService.deactivateStudent(1);
+
+        // Then
+        assertThat(result.isEnabled()).isFalse();
+        verify(this.studentRepository, times(1)).save(john);
+    }
+
+    @Test
+    void testDeactivateAnAlreadyDeactivatedStudent() {
+        // Given (6a)
+        Student john = this.students.get(0);
+        john.setEnabled(false);
+        given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
+
+        // When
+        Throwable thrown = catchThrowable(() -> this.studentService.deactivateStudent(1));
+
+        // Then
+        assertThat(thrown).isInstanceOf(StudentAlreadyDeactivatedException.class)
+                .hasMessage("This student is already deactivated.");
+        verify(this.studentRepository, never()).save(any(Student.class));
+    }
+
+    @Test
     void testDeleteStudent() {
         // Given
         given(this.studentRepository.findById(1)).willReturn(Optional.of(this.students.get(0)));

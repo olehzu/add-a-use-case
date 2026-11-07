@@ -21,6 +21,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import team.projectpulse.student.StudentAlreadyDeactivatedException;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.HttpClientErrorException;
@@ -194,6 +195,12 @@ public class ExceptionHandlerAdvice {
     @ExceptionHandler(SectionLockRequiredException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     Result handleSectionLockRequiredException(SectionLockRequiredException ex) {
+        return new Result(false, StatusCode.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(StudentAlreadyDeactivatedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    Result handleStudentAlreadyDeactivatedException(StudentAlreadyDeactivatedException ex) {
         return new Result(false, StatusCode.CONFLICT, ex.getMessage());
     }
 
