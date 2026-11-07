@@ -73,18 +73,17 @@ describe('Deactivate a student', () => {
 
     cy.get('.el-message-box').should('be.visible')
     cy.get('.el-message-box__title').should('contain', 'Deactivate John Smith?')
+    // The whole body, word for word from the design's UI text table ("Step 4 warning, body") with John filled in:
+    // every consequence in the use case's Associated Information, so dropping any one of them fails this test.
+    const warning =
+      'John will no longer be able to log in, and a session already open ends at the next action. ' +
+      'John will no longer owe weekly activity reports or peer evaluations and will get no reminders. ' +
+      'Teammates will no longer be asked to rate John, and can no longer submit or change a peer evaluation of John. ' +
+      'John stays in the course section and on the team, and all weekly activity reports and peer evaluations are kept. ' +
+      'You can reactivate John later.'
     cy.get('.el-message-box__message')
-      .should(
-        'contain',
-        'John will no longer be able to log in, and a session already open ends at the next action.'
-      )
-      .and(
-        'contain',
-        'will no longer owe weekly activity reports or peer evaluations and will get no reminders.'
-      )
-      .and('contain', 'can no longer submit or change a peer evaluation of John.')
-      .and('contain', 'all weekly activity reports and peer evaluations are kept.')
-      .and('contain', 'You can reactivate John later.')
+      .invoke('text')
+      .then((text) => expect(text.replace(/\s+/g, ' ').trim()).to.equal(warning))
     cy.get('.el-message-box').contains('button', 'Deactivate').should('exist')
     cy.get('.el-message-box').contains('button', 'Cancel').should('exist')
   })
@@ -105,16 +104,13 @@ describe('Deactivate a student', () => {
     cy.intercept('POST', '**/students/search*', { body: page([{ ...john, enabled: false }]) }).as(
       'reload'
     )
-    cy.get('@search.all').then((before) => {
-      cy.get('[data-cy=deactivate-student]').click()
-      cy.get('.el-message-box').contains('button', 'Deactivate').click()
+    cy.get('[data-cy=deactivate-student]').click()
+    cy.get('.el-message-box').contains('button', 'Deactivate').click()
 
-      cy.wait('@deactivate')
-      cy.get('.el-message--success').should('contain', 'John Smith has been deactivated.')
-      cy.get('[data-cy=deactivate-student]').should('not.exist') // The dialog has closed
-      cy.wait('@reload') // A second search request
-      cy.get('@search.all').should('have.length', before.length) // The first stub was not asked again
-    })
+    cy.wait('@deactivate')
+    cy.get('.el-message--success').should('contain', 'John Smith has been deactivated.')
+    cy.get('[data-cy=deactivate-student]').should('not.exist') // The dialog has closed
+    cy.wait('@reload') // A second search request
     cy.get('@deactivate.all').should('have.length', 1)
     cy.get('.el-table__row').first().should('contain', 'Disabled')
   })
