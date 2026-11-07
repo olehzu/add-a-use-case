@@ -7,6 +7,7 @@ import type {
   DeleteStudentResponse,
   FindStudentByIdResponse,
   UpdateStudentResponse,
+  DeactivateStudentResponse,
   Student,
   RegistrationParams,
   FindStudentByTeamIdResponse
@@ -36,6 +37,10 @@ export const updateStudent = (updatedStudent: Student) =>
     `${API.STUDENTS_ENDPOINT}/${updatedStudent.id}`,
     updatedStudent
   )
+
+// UC-STU-deactivate-student: refused with 409 when she is already deactivated (6a)
+export const deactivateStudent = (id: number) =>
+  request.patch<any, DeactivateStudentResponse>(`${API.STUDENTS_ENDPOINT}/${id}/deactivation`)
 
 export const deleteStudent = (id: number) =>
   request.delete<any, DeleteStudentResponse>(`${API.STUDENTS_ENDPOINT}/${id}`)
