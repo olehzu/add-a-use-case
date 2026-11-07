@@ -176,7 +176,9 @@ class StudentServiceTest {
         assertThat(result.getLastName()).isEqualTo(update.getLastName());
         assertThat(result.getEmail()).isEqualTo(update.getEmail());
 //        assertThat(result.getRoles()).isEqualTo(update.getRoles());
-        assertThat(result.isEnabled()).isEqualTo(update.isEnabled());
+        // No enabled assertion: the student is already active and the update keeps her active, so it would be
+        // true == true. testInstructorCannotDeactivateAStudentThroughUpdate and
+        // testInstructorStillReactivatesAStudentThroughUpdate cover what an instructor's PUT does to enabled.
     }
 
     private void givenTheCallerIsAnInstructor() {
