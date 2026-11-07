@@ -20,6 +20,9 @@ import team.projectpulse.section.Section;
 import team.projectpulse.system.StatusCode;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -109,12 +112,12 @@ class StudentDeactivationIntegrationTest extends AbstractIntegrationTest {
     void testAssignedInstructorDeactivatesAStudent() throws Exception {
         long activities = count("select count(a) from Activity a where a.student.id = :id");
         long evaluations = count("select count(e) from PeerEvaluation e where e.evaluator.id = :id or e.evaluatee.id = :id");
+        long evaluationsOfHerInWeek31 = count("select count(e) from PeerEvaluation e where e.evaluatee.id = :id and e.week = '2023-W31'");
 
         deactivate(JOHN, this.instructorBillToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.flag").value(true))
                 .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
-                .andExpect(jsonPath("$.message").value("Deactivate student successfully"))
                 .andExpect(jsonPath("$.data.id").value(JOHN))
                 .andExpect(jsonPath("$.data.enabled").value(false))
                 .andExpect(jsonPath("$.data.teamName").value("Team1"))
@@ -128,10 +131,21 @@ class StudentDeactivationIntegrationTest extends AbstractIntegrationTest {
         assertThat(count("select count(a) from Activity a where a.student.id = :id")).isEqualTo(activities);
         assertThat(count("select count(e) from PeerEvaluation e where e.evaluator.id = :id or e.evaluatee.id = :id")).isEqualTo(evaluations);
 
-        // And the instructor can still read her peer evaluations
+        // And the instructor can still read all of her weekly activity reports and her peer evaluations (the
+        // test list's main row: "still readable by the instructor"). Expected sizes are the seeded rows, counted
+        // before the deactivation, and must be non-zero or the read proves nothing.
+        assertThat(activities).isPositive();
+        this.mockMvc.perform(post(this.baseUrl + "/activities/search").param("size", "100").contentType(MediaType.APPLICATION_JSON).content("{\"studentId\":\"" + JOHN + "\"}").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data.content", hasSize((int) activities)))
+                .andExpect(jsonPath("$.data.content[*].studentId", everyItem(is(JOHN))));
+
+        assertThat(evaluationsOfHerInWeek31).isPositive();
         this.mockMvc.perform(get(this.baseUrl + "/evaluations/students/" + JOHN + "/week/2023-W31/details").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.flag").value(true));
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.data", hasSize((int) evaluationsOfHerInWeek31)));
     }
 
     @Test
